@@ -1,0 +1,313 @@
+---
+title: "What is Transport Performance?"
+subtitle: "Travel by Bus, Train & Walking Modes"
+authors: "Charlie Brown, Henry Lau, Rich Leyshon, Ethan Moss, & Sergio Recio-Rodriguez"
+date: 24 April 2024
+toc: true
+self-contained: true
+jupyter: 
+  kernelspec:
+    name: "conda-env-BURN_ME-py"
+    language: "python"
+    display_name: "stat-explainer-env"
+---
+
+```{python}
+#| echo: false
+import os
+
+from pyprojroot import here
+import pandas as pd
+import geopandas as gpd
+import folium
+from folium.map import Icon
+from itables import show
+
+```
+
+```{python}
+#| echo: false
+dat_loc = "data/stat-explainer/"
+cardiff_uc_pth = here(os.path.join(dat_loc, "uc-gdf.pkl"))
+snippet_gdf_pth = here(os.path.join(dat_loc, "6481_snippet_gdf.pkl"))
+centroid_gdf_pth = here(os.path.join(dat_loc, "6481_centroid_gdf.pkl"))
+
+cardiff_uc = pd.read_pickle(cardiff_uc_pth)
+cardiff_uc_gdf = gpd.GeoDataFrame(cardiff_uc)
+
+snippet_gdf = pd.read_pickle(snippet_gdf_pth)
+snippet_gdf = gpd.GeoDataFrame(snippet_gdf)
+centroid_gdf = pd.read_pickle(centroid_gdf_pth)
+centroid_gdf = gpd.GeoDataFrame(centroid_gdf)
+
+```
+
+```{python}
+#| echo: false
+# define visualisation func
+def plot(
+    gdf: gpd.GeoDataFrame,
+    column: str = None,
+    column_control_name: str = None,
+    uc_gdf: gpd.GeoDataFrame = None,
+    show_uc_gdf: bool = True,
+    point: gpd.GeoDataFrame = None,
+    show_point: bool = False,
+    point_control_name: str = "POI",
+    point_color: str = "red",
+    point_buffer: int = None,
+    overlay: gpd.GeoDataFrame = None,
+    overlay_control_name: str = "Overlay",
+    cmap: str = "viridis_r",
+    color: str = "#12436D",
+    caption: str = None,
+    max_labels: int = 9,
+    save: str = None,
+) -> folium.Map:
+    """Plot travel times/transport performance.
+
+    Parameters
+    ----------
+    gdf : gpd.GeoDataFrame
+        The geospatial dataframe to visualise
+    column : str, optional
+        Column within the dataframe to visualise, by default None meaning no
+        colourmap will be added
+    column_control_name : str, optional
+        Name to column to appear in folium control layer, by default None
+        meaning the column name will be used in the folium control layer
+    uc_gdf : gpd.GeoDataFrame, optional
+        The urban centre geodataframe, by default None meaning no urban centre
+        will be added to the visualisation.
+    show_uc_gdf : bool, optional
+        Boolean flag to control whether the urban centre is displayed on
+        opening, by default True meaning it will be initially displayed until
+        it is deselected on the contol layer
+    point : gpd.GeoDataFrame, optional
+        Point of interest marker to be added to the visual, by default None
+        meaning no plot will be added.
+    show_point : bool, optional
+        Boolean flag to control whether the point of interest is displayed on
+        opening, by default False meaning it will not be displayed initially
+        until it is selected on the control layer.
+    point_control_name : str, optional
+        Name to give the point of interest in the layer control, by default
+        "POI",
+    point_color : str, optional
+        Color of the point of interest marker, by default "red"
+    point_buffer : int, optional
+        Distance, in m, to added a dashed line from the point of interest,
+        by default None meaning no buffer will be added
+    overlay : gpd.GeoDataFrame, optional
+        An extra geodataframe that can be added as an overlay layer to the
+        visual, by default None meaning no overlay is added
+    overlay_control_name : str, optional
+        Name of the overlay layer in the overlay control menu, by default
+        "Overlay".
+    cmap : str, optional
+        Color map to use for visualising data, by default "viridis_r". Only
+        used when `column` is not None.
+    color : str, optional
+        Color to set the data (i.e. a fixed value), by default "#12436D". Only
+        used when `cmap` is set to None.
+    caption : str, optional
+        Legend caption, by default None meaning `column` will be used.
+    max_labels : int, optional
+        Maximum number of legend labels, by default 9. Useful to control the
+        distance between legend ticks.
+    save : str, optional
+        Location to save file, by default None meaning no file will be saved.
+
+    Returns
+    -------
+    folium.Map
+        Folium visualisation output
+
+    """
+    # create an empty map layer so individual tiles can be addeded
+    m = folium.Map(tiles=None, control_scale=True, zoom_control=True)
+
+    # infromation for carto positron tile
+    tiles = "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+    attr = (
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStre'
+        'etMap</a> contributors &copy; <a href="https://carto.com/attribut'
+        'ions">CARTO</a>'
+    )
+
+    # add Carto Positron tile layer
+    folium.TileLayer(
+        name="Carto Positron Basemap",
+        tiles=tiles,
+        attr=attr,
+        show=True,
+        control=True,
+    ).add_to(m)
+
+    # add OpenStreetMap tile layer
+    folium.TileLayer(
+        name="OpenStreetMap Basemap",
+        show=False,
+        control=True,
+    ).add_to(m)
+
+    # handle legend configuration
+    legend_kwds = {}
+    if caption is not None:
+        legend_kwds["caption"] = caption
+    legend_kwds["max_labels"] = max_labels
+
+    # handle setting column layer name in control menu
+    if column_control_name is None:
+        column_control_name = column
+
+    # add data to the map
+    m = gdf.explore(
+        column,
+        m=m,
+        color=color,
+        cmap=cmap,
+        legend_kwds=legend_kwds,
+        name=column_control_name,
+    )
+
+    # add the urban centre layer, if one is provided
+    if uc_gdf is not None:
+        m = uc_gdf.explore(
+            m=m,
+            color="red",
+            style_kwds={"fill": None},
+            name="Urban Centre",
+            show=show_uc_gdf,
+        )
+
+    # add a point marker to the map, if one is provided
+    if point is not None:
+        marker_kwds = {
+            "icon": Icon(
+                color="red",
+                prefix="fa",
+                icon="flag-checkered",
+            )
+        }
+        m = point.explore(
+            m=m,
+            name=point_control_name,
+            marker_type="marker",
+            marker_kwds=marker_kwds,
+            show=show_point,
+        )
+
+        # add in a dashed buffer around the point, if requested
+        if point_buffer is not None:
+            m = (
+                point.to_crs("EPSG:27700")
+                .buffer(point_buffer)
+                .explore(
+                    m=m,
+                    color=point_color,
+                    style_kwds={"fill": None, "dashArray": 5},
+                    name="Max Distance from Destination",
+                    show=show_point,
+                )
+            )
+
+    # add in an extra overlay layer, if requested
+    if overlay is not None:
+        m = overlay.explore(
+            m=m,
+            color="#F46A25",
+            name=overlay_control_name,
+        )
+
+    # get and fit the bounds to the added map layers
+    m.fit_bounds(m.get_bounds())
+
+    # add a layer control button
+    folium.LayerControl().add_to(m)
+
+    return m
+
+
+```
+
+
+Transport performance is a statistic developed by The <a href=https://ec.europa.eu/regional_policy/sources/work/012020_low_carbon_urban.pdf target="_blank">European Commission</a> that allows
+measurment and comparison of how efficiently people move through transport
+networks.
+
+In the example below, transport performance is visualised for a single location
+in Cardiff.
+
+Using this location as the journey origin, travel times to the surrounding
+neighbourhood within 45 minutes can be calculated. The
+<strong><span style="color:#14466f;">proximal population</span></strong> that
+can be reached is summed. This population would be reachable from the journey
+origin if travel at 15 km/h in a straight line were possible. This assumption
+is coherent with the European Commission's assumption of average travel speed
+by public transport.  
+
+The <strong><span style="color:#c3896f">accessible population</span></strong>
+for the same journey duration is also calculated. This is the number of people
+reachable from the journey origin by public transport and walking modes.  
+
+To calculate the transport performance statistic, the ratio of
+<strong><span style="color:#c3896f">accessible</span></strong>
+to
+<strong><span style="color:#14466f">proximal</span></strong> population is
+taken.
+
+```{python}
+#| echo: false
+# plot the accessible cells ontop of the proximity cells
+plot(
+    snippet_gdf[(snippet_gdf.centroid_distance <= 11250)],
+    column=None,
+    caption=None,
+    uc_gdf=cardiff_uc_gdf[0:1],
+    show_uc_gdf=False,
+    column_control_name="Nearby Population",
+    point=centroid_gdf[centroid_gdf.id == 6481],
+    show_point=True,
+    point_control_name="Destination Centroid",
+    point_buffer=11250,
+    overlay=gpd.GeoDataFrame(
+        geometry=[
+            snippet_gdf[
+                (snippet_gdf.travel_time <= 45)
+                & (snippet_gdf.centroid_distance <= 11250)
+            ].geometry.unary_union
+        ],
+        crs=snippet_gdf.crs,
+    ),
+    overlay_control_name="Reachable Population",
+    cmap=None,
+    color="#12436D",
+    save=None,
+)
+
+```
+
+<img src=www/map-legend.png width=150 align="right">
+
+
+$$
+P(^tmax,^dmax) = \frac{Accessible Pop}{Proximal Pop} \times 100
+$$
+
+$P =$ Transport Performance  
+$^tmax =$ Maximum travel duration (45 minutes).  
+$^dmax =$ Maximum travel distance (11.25 km).  
+$Accessible Pop =$ Total population reached from any journey origin
+point, by public transport.  
+$Proximal Pop =$ Total nearby population, as the crow flies and at a constant
+speed of 15 km/h.  
+
+The transport performance statistic is calculated for every 200 m^2^
+cell in the area. As the journey departure time is known to affect the
+available services, varying the departure time results in differing transport
+performance. In order to produce a less volatile statistic, the transport
+performance for every cell is calculated at 1 minute interval departure times
+between 08:00 and 09:00 on a single day. The chosen date in this example is
+Wednesday 22^nd^ November 2023, a day that is representative of
+average public transport service in the public transport schedules.
